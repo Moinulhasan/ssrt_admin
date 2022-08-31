@@ -9,6 +9,17 @@ use Illuminate\Support\Facades\Hash;
 class CustomerController extends Controller
 {
     //
+    public function index()
+    {
+        return view('pages.customer.index');
+    }
+
+    public function addPage()
+    {
+        return view('pages.customer.add');
+    }
+
+
     public function createUser(Request $request)
     {
         $content = new Customer();
@@ -616,19 +627,6 @@ $full_sql = [$sql_foutse,$sql_fourtsi,$sql_fourtfi,$sql_fourtfo,$sql_fourtth,$sq
             $new_mysql_username = $data->first_name;
             $new_mysql_password = $password;
 
-//            $conn = mysqli_connect(
-//                config('database.connections.mysql.host'),
-//                env('DB_USERNAME'),
-//                env('DB_PASSWORD')
-//            );
-//            if(!$conn ) {
-//                return false;
-//            }
-//            $sql = 'CREATE Database IF NOT EXISTS '.$new_db_name;
-//
-//
-//            $exec_query = mysqli_query( $conn, $sql);
-//            $db_result=mysqli_select_db($new_db_name);
             $connection = mysqli_connect(
                 config('database.connections.mysql.host'),
                 env('DB_USERNAME'),
