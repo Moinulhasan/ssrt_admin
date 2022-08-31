@@ -26,6 +26,7 @@ class AuthRepository extends \App\Repositories\BaseRepository implements Authent
             DB::commit();
             return $content;
         } catch (\Exception $exception) {
+            dd($exception);
             DB::rollBack();
             return false;
         }

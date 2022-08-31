@@ -60,4 +60,9 @@ class AuthController extends Controller
         return redirect()->route('login');
 
     }
+
+    public function register()
+    {
+        return view('auth.register');
+    }
 }
