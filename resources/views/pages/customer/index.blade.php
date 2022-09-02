@@ -15,10 +15,12 @@
                     <thead>
                     <tr>
                         <th>SL</th>
-                        <th>Name</th>
+                        <th>First Name</th>
                         <th>email</th>
-                        <th>Address</th>
-                        <th>Is Database</th>
+                        <th>Company Name</th>
+                        <th>Database Name</th>
+                        <th>Database User</th>
+                        <th>Database Password</th>
                         <th>Action</th>
                     </tr>
                     </thead>
@@ -26,4 +28,30 @@
             </div>
         </div>
     </div>
+@endsection
+
+@section('script')
+    <script>
+        $(document).ready(function () {
+            loadDataTable({
+                tableId: 'offerTable', url: '{{route('customer.index')}}', columns: [
+                    {data: 'id',className:'text-center'},
+                    {data: 'name',className:'text-center'},
+                    {data: 'email',className:'text-center'},
+                    {data: 'company_name',className:'text-center'},
+                    {data: 'db_name',className:'text-center'},
+                    {data: 'db_user',className:'text-center'},
+                    {data: 'db_password',className:'text-center'},
+                    {data: 'action',className:'text-center'},
+                ], columnDefs: [
+                    {
+                        targets: 7,
+                        createdCell: function (td, cellData, rowData) {
+                            $(td).html(actions(rowData.action, 'offerTable'));
+                        }
+                    }
+                ]
+            })
+        });
+    </script>
 @endsection

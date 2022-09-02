@@ -30,5 +30,10 @@ Route::group(['middleware' => 'auth'], function () {
     Route::group(['prefix' => 'customer','as'=>'customer.'],function (){
         Route::get('/',[CustomerController::class,'index'])->name('index');
         Route::get('/add-page',[CustomerController::class,'addPage'])->name('add-page');
+        Route::post('/create',[CustomerController::class,'createUser'])->name('create');
+        Route::get('/edit-page/{id}',[CustomerController::class,'editPage'])->name('edit-page');
+        Route::put('/update/{id}',[CustomerController::class,'updateCustomer'])->name('update');
+        Route::get('/view-page/{id}',[CustomerController::class,'view'])->name('view-page');
+        Route::delete('/delete/{id}',[CustomerController::class,'deleteCustomer'])->name('delete');
     });
 });

@@ -20,6 +20,10 @@ class CreateCustomersTable extends Migration
             $table->string('surname')->nullable();
             $table->string('password');
             $table->string('company_name')->nullable()->unique();
+            $table->string('note')->nullable();
+            $table->string('database_name')->nullable();
+            $table->string('database_user_name')->nullable();
+            $table->string('database_password')->nullable();
             $table->timestamps();
         });
     }

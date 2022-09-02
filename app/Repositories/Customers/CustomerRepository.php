@@ -1,121 +1,141 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Repositories\Customers;
 
-use App\Exceptions\ControllerException;
-use App\Http\Requests\CustomerRequest;
-use App\Http\Resources\CustomerResource;
-use App\Models\Customer;
-use App\Repositories\Customers\CustomerRepositoryInterface;
-use Illuminate\Http\Request;
+use App\Models\CompanyDetails;
+use App\Models\CompanyPost;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Hash;
 
-class CustomerController extends Controller
+class CustomerRepository extends \App\Repositories\BaseRepository implements CustomerRepositoryInterface
 {
-    /**
-     * @var CustomerRepositoryInterface
-     */
-    private $customer;
 
-    public function __construct(
-        CustomerRepositoryInterface $customerRepository
-    )
+    public function createCustomer($data)
     {
-        $this->customer = $customerRepository;
+        $content = $this->model;
+        $content->first_name = $data['name'];
+        $content->email = $data['email'];
+        $content->surname = $data['surname'] ?? '';
+        $content->company_name = $data['company_name'];
+        $content->password = Hash::make($data['password']);
+        $content->note = $data['note'] ?? '';
+        $content->save();
+        $this->companyDetails($data, $content);
+        $this->databaseCreate($content, $data['password']);
+        return $content;
     }
 
-    //
-    public function index(Request $request)
+    public function updateCustomer($data, $id)
     {
-        if ($request->ajax()) {
-            $draw = $request->get('draw');
-            $start = $request->get("start");
-            $rowperpage = $request->get("length");                // total number of rows per page
+        $content = $this->model->find($id);
+        if (isset($data['name']) && !empty($data['name']))
+            $content->first_name = $data['name'];
+        if (isset($data['email']) && !empty($data['email']))
+            $content->email = $data['email'];
+        if (isset($data['surname']) && !empty($data['surname']))
+            $content->surname = $data['surname'] ?? '';
+        if (isset($data['company_name']) && !empty($data['company_name']))
+            $content->company_name = $data['company_name'];
+        if (isset($data['password']) && !empty($data['password']))
+            $content->password = Hash::make($data['password']);
+        if (isset($data['note']) && !empty($data['note']))
+            $content->note = $data['note'] ?? '';
+        $content->save();
+        $content->load('details', 'details.pos');
+        $content->details->pos()->delete();
+        $content->details()->delete();
+        $this->companyDetails($data, $content);
+        return $content;
+    }
+    public function customDelete($id)
+    {
+        $content = $this->model->find($id);
+        $content->load('details', 'details.pos');
+        $content->details->pos()->delete();
+        $content->details()->delete();
+       return $content->delete();
+    }
 
-            $search_arr = $request->get('search');
+    public function getAllCustomer($start, $perPage, $searchValue)
+    {
+        $output = $this->model->with('details', 'details.owner')->when($searchValue, function ($q, $searchValue) {
+            $q->where('name', 'like', '%' . $searchValue . '%');
+        })->orderBy('id', 'desc');
 
-            $searchValue = $search_arr['value'];
-            $totalRecords = $this->customer->count();
-            $records = $this->customer->getAllCustomer($start, $rowperpage, $searchValue);
-            $response = array(
-                "draw" => intval($draw),
-                "recordsTotal" => $totalRecords,
-                "recordsFiltered" => $records['total_data'],
-                "data" => CustomerResource::collection($records['data']),
-            );
-            return response()->json($response);
+        return [
+            'total_data' => $output->count(),
+            'data' => $output->skip($start)
+                ->take($perPage)
+                ->get()
+        ];
+    }
+
+    public function customGet($id)
+    {
+        $output = $this->model->find($id);
+        return $output->load('details', 'details.pos');
+    }
+
+    private function companyDetails($data, $customer)
+    {
+        $details = new CompanyDetails();
+        $details->owner()->associate($customer);
+        $details->abn = $data['abn'] ?? '';
+        $details->address = '';
+        $details->line_one = $data['line_one'] ?? '';
+        $details->line_two = $data['line_two'] ?? '';
+        $details->subrub = $data['subrub'] ?? '';
+        $details->state = $data['state'] ?? '';
+        $details->postcode = $data['postcode'] ?? '';
+        $details->phone = $data['phone'] ?? '';
+        $details->fax = $data['fax'] ?? '';
+        $details->start_subscription = Carbon::parse($data['start_subscription']);
+        $details->end_subscription = Carbon::parse($data['end_subscription']);
+        $details->grace_preiod = $data['grace'];
+        $details->save();
+        $this->customerPost($data['pos'], $details);
+        return $details;
+
+    }
+
+    private function customerPost($data, $details)
+    {
+
+        if (count($data) > 0) {
+            foreach ($data['main'] as $item) {
+                $pos = new CompanyPost();
+                $pos->companyOwner()->associate($details);
+                $pos->pos_no = $item['no'];
+                $pos->pos_name = $item['name'];
+                $pos->hardware_id = $item['id'];
+                $pos->activation_code = $item['code'];
+                $pos->save();
+            }
         }
-        return view('pages.customer.index');
     }
 
-    public function addPage()
-    {
-        return view('pages.customer.add');
-    }
-
-    public function editPage(Request $request, $id)
-    {
-        $output = $this->customer->customGet(decrypt($id));
-        return view('pages.customer.edit', ['content' => $output]);
-    }
-
-    public function view(Request $request, $id)
-    {
-        $output = $this->customer->customGet(decrypt($id));
-        return view('pages.customer.view', ['content' => $output]);
-    }
-
-    public function updateCustomer(CustomerRequest $request, $id)
-    {
-        $data = $request->only('name', 'email', 'surname', 'company_name', 'password', 'note', 'abn', 'line_one', 'line_two',
-            'subrub', 'state', 'postcode', 'phone', 'fax', 'start_subscription', 'end_subscription', 'grace', 'pos');
-        $output = $this->customer->updateCustomer($data, decrypt($id));
-
-        if ($output) {
-            return ControllerException::success('customer.index', '');
-        } else {
-            return ControllerException::error();
-        }
-    }
-
-    public function deleteCustomer(Request $request, $id)
-    {
-        $output = $this->customer->customDelete(decrypt($id));
-        if ($output) {
-            return ['status' => true];
-        } else {
-            return ['status' => false, 'msg' => ['something went wrong !']];
-        }
-    }
-
-    public function createUser(CustomerRequest $request)
+    private function databaseCreate($data, $password)
     {
 
-        $data = $request->only('name','email','surname','company_name','password','note','abn','line_one','line_two',
-            'subrub','state','postcode','phone','fax','start_subscription','end_subscription','grace','pos');
-        $output = $this->customer->createCustomer($data);
-
-        if ($output) {
-            return ControllerException::success('customer.index', '');
-        } else {
-            return ControllerException::error();
-        }
-    }
-
-    private function test($data, $password)
-    {
-        $new_db_name = "ssrt_" . $data->id;
+        $new_db_name = "admin_database_" . $data->id;
         $new_mysql_username = $data->first_name;
         $new_mysql_password = $password;
         $connection = mysqli_connect('localhost', env('DB_USERNAME'), env('DB_PASSWORD'));
         mysqli_query($connection, "CREATE USER '$new_mysql_username'@'localhost' IDENTIFIED BY '$new_mysql_password';");
         mysqli_query($connection, "GRANT ALL ON $new_db_name.* TO '$new_mysql_username'@'localhost'");
-        mysqli_query($connection, "CREATE DATABASE  IF NOT EXISTS" . $new_db_name);
+        mysqli_query($connection, "CREATE DATABASE " . $new_db_name);
 
         $conn = mysqli_connect(config('database.connections.mysql.host'), $new_mysql_username, $new_mysql_password, $new_db_name);
         if ($conn->connect_error) {
             die("Connection failed: " . $conn->connect_error);
         }
+
+        $content = $this->model->find($data->id);
+        $content->database_name = $new_db_name;
+        $content->database_user_name = $new_mysql_username;
+        $content->database_password = $new_mysql_password;
+        $content->save();
+
         $sql_one = "CREATE TABLE `accounts` (
   `id` int(11) NOT NULL,
   `first_name` varchar(245) NOT NULL,
@@ -142,8 +162,7 @@ class CustomerController extends Controller
   `last_modified_by` varchar(45) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT '',
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
-
-       $sql_tow = "CREATE TABLE `advertisement` (
+        $sql_tow = "CREATE TABLE `advertisement` (
   `advertisement_id` int(11) NOT NULL,
   `name` varchar(100) NOT NULL,
   `contents` varchar(500) NOT NULL,
@@ -160,18 +179,17 @@ class CustomerController extends Controller
   `last_modified_by` varchar(45) NOT NULL,
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
-       $sql_three ="
-CREATE TABLE `branch` (
+        $sql_three = "CREATE TABLE `branch` (
   `branch_id` int(11) NOT NULL,
   `company_id` int(11) DEFAULT NULL,
   `branch_name` varchar(100) DEFAULT NULL,
   `display_seq` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
-      $sql_four='CREATE TABLE `company` (
+        $sql_four = 'CREATE TABLE `company` (
   `company_id` int(11) NOT NULL,
   `name` varchar(45) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;';
-     $sql_five ="CREATE TABLE `customers` (
+        $sql_five = "CREATE TABLE `customers` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `first_name` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `last_name` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -183,7 +201,7 @@ CREATE TABLE `branch` (
   `created_at` timestamp NULL DEFAULT NULL,
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
-     $sql_six ="CREATE TABLE `department` (
+        $sql_six = "CREATE TABLE `department` (
   `department_id` int(11) NOT NULL,
   `parent_department_id` int(11) DEFAULT NULL,
   `department_name` varchar(100) NOT NULL,
@@ -194,7 +212,7 @@ CREATE TABLE `branch` (
   `last_modified_date` datetime DEFAULT NULL,
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
-$sql_seven ="CREATE TABLE `failed_jobs` (
+        $sql_seven = "CREATE TABLE `failed_jobs` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `connection` text COLLATE utf8mb4_unicode_ci NOT NULL,
   `queue` text COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -202,7 +220,7 @@ $sql_seven ="CREATE TABLE `failed_jobs` (
   `exception` longtext COLLATE utf8mb4_unicode_ci NOT NULL,
   `failed_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
-$sql_eight = "CREATE TABLE `item` (
+        $sql_eight = "CREATE TABLE `item` (
   `item_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `supplier_id` int(11) DEFAULT NULL,
@@ -231,7 +249,7 @@ $sql_eight = "CREATE TABLE `item` (
   `open_description` varchar(45) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_nine = "CREATE TABLE `item_modifiers_category` (
+        $sql_nine = "CREATE TABLE `item_modifiers_category` (
   `item_modifiers_category_id` int(11) NOT NULL,
   `modifiers_category_id` int(11) NOT NULL,
   `item_id` int(11) NOT NULL,
@@ -242,7 +260,7 @@ $sql_nine = "CREATE TABLE `item_modifiers_category` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 ";
-$sql_ten ="CREATE TABLE `item_price_level_location` (
+        $sql_ten = "CREATE TABLE `item_price_level_location` (
   `item_price_level_location_id` int(11) NOT NULL,
   `item_id` int(11) DEFAULT NULL,
   `location_id` int(11) DEFAULT NULL,
@@ -257,7 +275,7 @@ $sql_ten ="CREATE TABLE `item_price_level_location` (
   `record_status` smallint(6) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_ele ="CREATE TABLE `item_printer` (
+        $sql_ele = "CREATE TABLE `item_printer` (
   `item_printer_id` int(11) NOT NULL,
   `item_id` int(11) NOT NULL,
   `printer_id` int(11) NOT NULL,
@@ -268,8 +286,7 @@ $sql_ele ="CREATE TABLE `item_printer` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_twe ="
-CREATE TABLE `keyboard` (
+        $sql_twe = "CREATE TABLE `keyboard` (
   `keyboard_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `created_by` varchar(45) DEFAULT NULL,
@@ -280,7 +297,7 @@ CREATE TABLE `keyboard` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 ";
 
-$sql_ther ="CREATE TABLE `keyboard_department` (
+        $sql_ther = "CREATE TABLE `keyboard_department` (
   `keyboard_department_id` int(11) NOT NULL,
   `department_name` varchar(100) DEFAULT NULL,
   `keyboard_id` int(11) DEFAULT NULL,
@@ -294,7 +311,7 @@ $sql_ther ="CREATE TABLE `keyboard_department` (
   `record_status` smallint(6) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_for ="CREATE TABLE `keyboard_item` (
+        $sql_for = "CREATE TABLE `keyboard_item` (
   `keyboard_item_id` int(11) NOT NULL,
   `keyboard_sub_depatment_id` int(11) DEFAULT NULL,
   `item_id` int(11) DEFAULT NULL,
@@ -310,7 +327,7 @@ $sql_for ="CREATE TABLE `keyboard_item` (
   `modify_option` varchar(45) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_fif ="CREATE TABLE `keyboard_sub_department` (
+        $sql_fif = "CREATE TABLE `keyboard_sub_department` (
   `keyboard_sub_department_id` int(11) NOT NULL,
   `keyboard_department_id` int(11) DEFAULT NULL,
   `sub_department_name` varchar(100) DEFAULT NULL,
@@ -324,7 +341,7 @@ $sql_fif ="CREATE TABLE `keyboard_sub_department` (
   `record_status` smallint(6) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_sixs ="CREATE TABLE `location` (
+        $sql_sixs = "CREATE TABLE `location` (
   `location_id` int(11) NOT NULL,
   `location_name` varchar(100) NOT NULL,
   `number_of_tables` int(11) NOT NULL,
@@ -335,7 +352,7 @@ $sql_sixs ="CREATE TABLE `location` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_sev ="CREATE TABLE `location_table_details` (
+        $sql_sev = "CREATE TABLE `location_table_details` (
   `location_table_detail_id` int(11) NOT NULL,
   `location_id` int(11) NOT NULL,
   `start_number` int(11) NOT NULL,
@@ -348,7 +365,7 @@ $sql_sev ="CREATE TABLE `location_table_details` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_ei ="CREATE TABLE `message` (
+        $sql_ei = "CREATE TABLE `message` (
   `message_id` int(11) NOT NULL,
   `type` smallint(6) NOT NULL,
   `description` varchar(100) DEFAULT NULL,
@@ -359,13 +376,13 @@ $sql_ei ="CREATE TABLE `message` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_n ="CREATE TABLE `migrations` (
+        $sql_n = "CREATE TABLE `migrations` (
   `id` int(10) UNSIGNED NOT NULL,
   `migration` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `batch` int(11) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sql_tw ="CREATE TABLE `modifier` (
+        $sql_tw = "CREATE TABLE `modifier` (
   `modifier_id` int(11) NOT NULL,
   `modifiers_category_id` int(11) DEFAULT NULL,
   `description` varchar(45) NOT NULL,
@@ -377,7 +394,7 @@ $sql_tw ="CREATE TABLE `modifier` (
   `last_modified_date` datetime DEFAULT NULL,
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
-$sql_twon ="CREATE TABLE `modifiers_category` (
+        $sql_twon = "CREATE TABLE `modifiers_category` (
   `modifiers_category_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `created_by` varchar(45) DEFAULT NULL,
@@ -387,8 +404,7 @@ $sql_twon ="CREATE TABLE `modifiers_category` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_twth ="
-CREATE TABLE `orders` (
+        $sql_twth = "CREATE TABLE `orders` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `customer_id` bigint(20) UNSIGNED DEFAULT NULL,
   `user_id` bigint(20) UNSIGNED NOT NULL,
@@ -396,7 +412,7 @@ CREATE TABLE `orders` (
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sql_twfo ="CREATE TABLE `order_items` (
+        $sql_twfo = "CREATE TABLE `order_items` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `price` decimal(8,4) NOT NULL,
   `quantity` int(11) NOT NULL DEFAULT 1,
@@ -406,13 +422,13 @@ $sql_twfo ="CREATE TABLE `order_items` (
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sql_twf ="CREATE TABLE `password_resets` (
+        $sql_twf = "CREATE TABLE `password_resets` (
   `email` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `token` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `created_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sqk_tws ="CREATE TABLE `payments` (
+        $sqk_tws = "CREATE TABLE `payments` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `amount` decimal(8,4) NOT NULL,
   `order_id` bigint(20) UNSIGNED NOT NULL,
@@ -421,7 +437,7 @@ $sqk_tws ="CREATE TABLE `payments` (
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sql_twse ="CREATE TABLE `permission` (
+        $sql_twse = "CREATE TABLE `permission` (
   `permission_id` int(11) NOT NULL,
   `permission_name` varchar(45) NOT NULL DEFAULT '',
   `controller` varchar(255) NOT NULL,
@@ -433,7 +449,7 @@ $sql_twse ="CREATE TABLE `permission` (
   `record_status` varchar(45) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
 
-$sql_twei = "CREATE TABLE `plu_type` (
+        $sql_twei = "CREATE TABLE `plu_type` (
   `plu_type_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `created_by` varchar(45) DEFAULT NULL,
@@ -443,7 +459,7 @@ $sql_twei = "CREATE TABLE `plu_type` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_twnin ="CREATE TABLE `price_level` (
+        $sql_twnin = "CREATE TABLE `price_level` (
   `price_level_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `created_by` varchar(45) DEFAULT NULL,
@@ -453,7 +469,7 @@ $sql_twnin ="CREATE TABLE `price_level` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_ther ="CREATE TABLE `price_level_location` (
+        $sql_ther = "CREATE TABLE `price_level_location` (
   `price_level_location_id` int(11) NOT NULL,
   `price_level_id` int(11) NOT NULL,
   `location_id` int(11) NOT NULL,
@@ -464,7 +480,7 @@ $sql_ther ="CREATE TABLE `price_level_location` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_thron ="CREATE TABLE `printer` (
+        $sql_thron = "CREATE TABLE `printer` (
   `printer_id` int(11) NOT NULL,
   `description` varchar(100) DEFAULT NULL,
   `printer_group_id` int(11) DEFAULT NULL,
@@ -476,7 +492,7 @@ $sql_thron ="CREATE TABLE `printer` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_thrtwo ="CREATE TABLE `printer_group` (
+        $sql_thrtwo = "CREATE TABLE `printer_group` (
   `printer_group_id` int(11) NOT NULL,
   `description` varchar(100) NOT NULL,
   `client_print_order` int(11) DEFAULT 0,
@@ -488,7 +504,7 @@ $sql_thrtwo ="CREATE TABLE `printer_group` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_therfo ="CREATE TABLE `products` (
+        $sql_therfo = "CREATE TABLE `products` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `description` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -501,7 +517,7 @@ $sql_therfo ="CREATE TABLE `products` (
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sql_therfi ="CREATE TABLE `role` (
+        $sql_therfi = "CREATE TABLE `role` (
   `role_id` int(11) NOT NULL,
   `role_name` varchar(45) DEFAULT NULL,
   `description` varchar(255) DEFAULT '',
@@ -513,7 +529,7 @@ $sql_therfi ="CREATE TABLE `role` (
   `record_status` varchar(45) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
 
-$sql_thersix ="CREATE TABLE `role_permission` (
+        $sql_thersix = "CREATE TABLE `role_permission` (
   `role_permission_id` int(11) NOT NULL,
   `role_id` int(11) NOT NULL,
   `permission_id` int(11) NOT NULL,
@@ -524,8 +540,7 @@ $sql_thersix ="CREATE TABLE `role_permission` (
   `record_status` varchar(45) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
 
-$sql_thersev ="
-CREATE TABLE `settings` (
+        $sql_thersev = "CREATE TABLE `settings` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `key` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `value` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -533,7 +548,7 @@ CREATE TABLE `settings` (
   `updated_at` timestamp NULL DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;";
 
-$sql_therei ="CREATE TABLE `supplier` (
+        $sql_therei = "CREATE TABLE `supplier` (
   `supplier_id` int(11) NOT NULL,
   `name` varchar(45) NOT NULL,
   `vender_id` varchar(45) DEFAULT NULL,
@@ -559,7 +574,7 @@ $sql_therei ="CREATE TABLE `supplier` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_therni ="CREATE TABLE `tax` (
+        $sql_therni = "CREATE TABLE `tax` (
   `tax_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `rate` double NOT NULL,
@@ -570,7 +585,7 @@ $sql_therni ="CREATE TABLE `tax` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_fourt ="CREATE TABLE `terminal` (
+        $sql_fourt = "CREATE TABLE `terminal` (
   `terminal_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `location_id` int(11) NOT NULL,
@@ -582,7 +597,7 @@ $sql_fourt ="CREATE TABLE `terminal` (
   `has_updates` bit(1) DEFAULT b'0'
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_fouron ="CREATE TABLE `terminal_option` (
+        $sql_fouron = "CREATE TABLE `terminal_option` (
   `terminal_option_id` int(11) NOT NULL,
   `terminal_id` int(11) DEFAULT NULL,
   `terminal_option_detail_id` int(11) NOT NULL,
@@ -595,7 +610,7 @@ $sql_fouron ="CREATE TABLE `terminal_option` (
   `record_status` smallint(6) DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_fourttwo ="CREATE TABLE `terminal_option_detail` (
+        $sql_fourttwo = "CREATE TABLE `terminal_option_detail` (
   `terminal_option_detail_id` int(11) NOT NULL,
   `description` varchar(100) DEFAULT NULL,
   `type` int(11) DEFAULT 0,
@@ -608,7 +623,7 @@ $sql_fourttwo ="CREATE TABLE `terminal_option_detail` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
 
-$sql_fourtth ="CREATE TABLE `unit` (
+        $sql_fourtth = "CREATE TABLE `unit` (
   `unit_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL,
   `created_by` varchar(45) DEFAULT NULL,
@@ -618,7 +633,7 @@ $sql_fourtth ="CREATE TABLE `unit` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;";
 
-$sql_fourtth ="CREATE TABLE `users` (
+        $sql_fourtth = "CREATE TABLE `users` (
   `id` bigint(20) UNSIGNED NOT NULL,
   `first_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
   `last_name` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
@@ -634,13 +649,13 @@ $sql_fourtth ="CREATE TABLE `users` (
   `card_password` varchar(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sql_fourtfo ="CREATE TABLE `user_cart` (
+        $sql_fourtfo = "CREATE TABLE `user_cart` (
   `user_id` bigint(20) UNSIGNED NOT NULL,
   `product_id` bigint(20) UNSIGNED NOT NULL,
   `quantity` int(10) UNSIGNED NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
 
-$sql_fourtfi ="CREATE TABLE `voucher` (
+        $sql_fourtfi = "CREATE TABLE `voucher` (
   `voucher_id` int(11) NOT NULL,
   `description` varchar(45) DEFAULT NULL,
   `voucher_type_id` int(11) DEFAULT NULL,
@@ -656,7 +671,7 @@ $sql_fourtfi ="CREATE TABLE `voucher` (
   `unlimited` smallint(6) DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
 
-$sql_fourtsi ="CREATE TABLE `voucher_terminal` (
+        $sql_fourtsi = "CREATE TABLE `voucher_terminal` (
   `voucher_terminal_id` int(11) NOT NULL,
   `voucher_id` int(11) NOT NULL,
   `terminal_id` int(11) NOT NULL,
@@ -667,7 +682,7 @@ $sql_fourtsi ="CREATE TABLE `voucher_terminal` (
   `record_status` smallint(6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 ";
-$sql_foutse ="CREATE TABLE `voucher_type` (
+        $sql_foutse = "CREATE TABLE `voucher_type` (
   `voucher_type_id` int(11) NOT NULL,
   `description` varchar(45) NOT NULL DEFAULT '',
   `created_by` varchar(45) DEFAULT NULL,
@@ -676,60 +691,14 @@ $sql_foutse ="CREATE TABLE `voucher_type` (
   `created_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
   `last_modified_date` datetime DEFAULT NULL ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
-$full_sql = [$sql_foutse,$sql_fourtsi,$sql_fourtfi,$sql_fourtfo,$sql_fourtth,$sql_fourtth,$sql_fourttwo,$sql_fouron,
-    $sql_fourt,$sql_therni,$sql_therei,$sql_thersev,$sql_thersix,$sql_therfi,$sql_therfo,$sql_thrtwo,$sql_thron,$sql_ther,
-    $sql_twnin,$sql_twei,$sql_twse,$sqk_tws,$sql_twf,$sql_twfo,$sql_twth,$sql_twon,$sql_tw,$sql_n,$sql_ei,$sql_sev,$sql_sixs,$sql_fif,$sql_for,
-    $sql_ther,$sql_twe,$sql_ele,$sql_ten,$sql_nine,$sql_eight,$sql_seven,$sql_six,$sql_five,$sql_four,$sql_three,$sql_tow,$sql_one
-];
-        foreach($full_sql as $k => $sql) {
+        $full_sql = [$sql_foutse, $sql_fourtsi, $sql_fourtfi, $sql_fourtfo, $sql_fourtth, $sql_fourtth, $sql_fourttwo, $sql_fouron,
+            $sql_fourt, $sql_therni, $sql_therei, $sql_thersev, $sql_thersix, $sql_therfi, $sql_therfo, $sql_thrtwo, $sql_thron, $sql_ther,
+            $sql_twnin, $sql_twei, $sql_twse, $sqk_tws, $sql_twf, $sql_twfo, $sql_twth, $sql_twon, $sql_tw, $sql_n, $sql_ei, $sql_sev, $sql_sixs, $sql_fif, $sql_for,
+            $sql_ther, $sql_twe, $sql_ele, $sql_ten, $sql_nine, $sql_eight, $sql_seven, $sql_six, $sql_five, $sql_four, $sql_three, $sql_tow, $sql_one
+        ];
+        foreach ($full_sql as $k => $sql) {
             $query = $conn->query($sql);
         }
         return true;
-
     }
-
-    private function createDatabase($data, $password)
-    {
-        try {
-            $new_db_name = "ssrt_" . $data->id;
-            $new_mysql_username = $data->first_name;
-            $new_mysql_password = $password;
-
-            $connection = mysqli_connect(
-                config('database.connections.mysql.host'),
-                env('DB_USERNAME'),
-                env('DB_PASSWORD')
-            );
-            $sql_1 = "CREATE USER ''.$new_mysql_username.''@'localhost' IDENTIFIED BY ''.$new_mysql_password.'';";
-            mysqli_query($sql_1, $connection);
-            mysqli_query("GRANT ALL ON ''.$new_db_name.''.* TO ''.$new_mysql_username.''@'localhost'", $connection);
-            $th_con = mysqli_query("CREATE DATABASE '.$new_db_name.'", $connection);
-//            $th_con   =  mysqli_connect(
-//                config('database.connections.mysql.host'),
-//                env('DB_USERNAME'),
-//                env('DB_PASSWORD'),
-//                $new_db_name
-//            );
-            dd($th_con);
-            $test = 'CREATE TABLE employee( ' .
-                'emp_id INT NOT NULL AUTO_INCREMENT, ' .
-                'emp_name VARCHAR(20) NOT NULL, ' .
-                'emp_address  VARCHAR(20) NOT NULL, ' .
-                'emp_salary   INT NOT NULL, ' .
-                'join_date    timestamp(14) NOT NULL, ' .
-                'primary key ( emp_id ))';
-
-
-            $retval = mysqli_query($th_con, $test);
-
-            if (!$exec_query) {
-                die('Could not create database: ' . mysqli_error($conn));
-            }
-            return 'Database created successfully with name ' . $new_db_name;
-        } catch (\Exception $e) {
-            dd($e);
-            return false;
-        }
-    }
-
 }
