@@ -12,6 +12,7 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
 
     public function createCustomer($data)
     {
+
         $content = $this->model;
         $content->first_name = $data['name'];
         $content->email = $data['email'];
@@ -21,7 +22,7 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
         $content->note = $data['note'] ?? '';
         $content->save();
         $this->companyDetails($data, $content);
-        $this->databaseCreate($content, $data['password']);
+        $this->databaseCreate($content, $data['password'], $data);
         return $content;
     }
 
@@ -47,13 +48,14 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
         $this->companyDetails($data, $content);
         return $content;
     }
+
     public function customDelete($id)
     {
         $content = $this->model->find($id);
         $content->load('details', 'details.pos');
         $content->details->pos()->delete();
         $content->details()->delete();
-       return $content->delete();
+        return $content->delete();
     }
 
     public function getAllCustomer($start, $perPage, $searchValue)
@@ -114,10 +116,14 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
         }
     }
 
-    private function databaseCreate($data, $password)
+    private function databaseCreate($data, $password, $req)
     {
 
-        $new_db_name = "admin_database_" . $data->id;
+        $array = preg_split('#\s+#', $data['company_name'], 4);
+
+        $matches = preg_replace('/\s+/', '', $req['abn']);
+        $databaseName = substr($array[0], 0, 4) . substr($matches, 0, 4) . '_' . $data->id;
+        $new_db_name = $databaseName;
         $new_mysql_username = $data->first_name;
         $new_mysql_password = $password;
         $connection = mysqli_connect('localhost', env('DB_USERNAME'), env('DB_PASSWORD'));
