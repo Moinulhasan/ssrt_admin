@@ -23,27 +23,32 @@ class CustomerRequest extends FormRequest
      */
     public function rules()
     {
+        if ($this->getMethod() == 'POST') {
+            $data['email'] = 'required|email|unique:customers,email';
+        } else {
+            $data['email'] = 'required|email|unique:customers,email,' . decrypt($this->id);
+        }
 
-        return [
-            'name'=>'required|string',
-            'surname'=>'nullable|string',
-            'email'=>'required|email|unique:customers,email,'.decrypt($this->id),
-            'password'=>'required|min:5',
-            'company_name'=>'required|string',
-            'abn'=>'required|max:14',
-            'phone'=>'nullable|string',
-            'fax'=>'nullable|string',
-            'start_subscription'=>'required|date',
-            'end_subscription'=>'required|after:start_subscription|date',
-            'grace'=>'nullable|between:0,99',
-            'line_one'=>'nullable|string',
-            'line_two'=>'nullable|string',
-            'subrub'=>'nullable|string',
-            'state'=>'nullable|max:3',
-            'postcode'=>'nullable|digits:4',
-            'note'=>'nullable|string',
-            'pos.*'=>'nullable'
+
+        $data = [
+            'name' => 'required|string',
+            'surname' => 'nullable|string',
+            'password' => 'required|min:5',
+            'company_name' => 'required|string',
+            'abn' => 'required|max:14',
+            'phone' => 'nullable|string',
+            'fax' => 'nullable|string',
+            'start_subscription' => 'required|date',
+            'end_subscription' => 'required|after:start_subscription|date',
+            'grace' => 'nullable|between:0,99',
+            'line_one' => 'nullable|string',
+            'line_two' => 'nullable|string',
+            'subrub' => 'nullable|string',
+            'state' => 'nullable|max:3',
+            'postcode' => 'nullable|digits:4',
+            'note' => 'nullable|string',
+            'pos.*' => 'nullable'
         ];
-
+        return $data;
     }
 }
