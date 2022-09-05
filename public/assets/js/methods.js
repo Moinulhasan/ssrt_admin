@@ -287,7 +287,7 @@ function loadDataTable({tableId, url, columns, columnDefs = null, pageLength = 2
     return $('#' + tableId).DataTable({
         processing: true,
         serverSide: true,
-        ordering: false,
+        ordering:true,
         cache: false,
         autoWidth:false,
         // stateSave: true,

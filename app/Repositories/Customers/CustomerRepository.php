@@ -58,11 +58,11 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
         return $content->delete();
     }
 
-    public function getAllCustomer($start, $perPage, $searchValue)
+    public function getAllCustomer($start, $perPage, $searchValue,$order='desc')
     {
         $output = $this->model->with('details', 'details.owner')->when($searchValue, function ($q, $searchValue) {
             $q->where('name', 'like', '%' . $searchValue . '%');
-        })->orderBy('id', 'desc');
+        })->orderBy('id', $order);
 
         return [
             'total_data' => $output->count(),
@@ -122,7 +122,7 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
         $array = preg_split('#\s+#', $data['company_name'], 4);
 
         $matches = preg_replace('/\s+/', '', $req['abn']);
-        $databaseName = substr($array[0], 0, 4) . substr($matches, 0, 4) . '_' . $data->id;
+        $databaseName = substr($array[0], 0, 4) . substr($matches, 0, 4) . $data->id;
         $new_db_name = $databaseName;
         $new_mysql_username = $data->first_name;
         $new_mysql_password = $password;

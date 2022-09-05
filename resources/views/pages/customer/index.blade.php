@@ -15,13 +15,13 @@
                     <thead>
                     <tr>
                         <th>SL</th>
-                        <th>First Name</th>
-                        <th>email</th>
-                        <th>Company Name</th>
-                        <th>Database Name</th>
-                        <th>Database User</th>
-                        <th>Database Password</th>
-                        <th>Action</th>
+                        <th class="no-sort">First Name</th>
+                        <th class="no-sort">email</th>
+                        <th class="no-sort">Company Name</th>
+                        <th class="no-sort">Database Name</th>
+                        <th class="no-sort">Database User</th>
+                        <th class="no-sort">Database Password</th>
+                        <th class="no-sort">Action</th>
                     </tr>
                     </thead>
                 </table>
@@ -44,6 +44,10 @@
                     {data: 'db_password',className:'text-center'},
                     {data: 'action',className:'text-center'},
                 ], columnDefs: [
+                    {
+                        orderable: false,
+                        targets:  "no-sort"
+                    },
                     {
                         targets: 7,
                         createdCell: function (td, cellData, rowData) {

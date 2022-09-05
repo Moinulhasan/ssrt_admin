@@ -28,15 +28,16 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         if ($request->ajax()) {
+//            dd($request->get('order')[0]['dir']);
             $draw = $request->get('draw');
             $start = $request->get("start");
             $rowperpage = $request->get("length");                // total number of rows per page
 
             $search_arr = $request->get('search');
-
+            $order = $request->get('order')[0]['dir'];
             $searchValue = $search_arr['value'];
             $totalRecords = $this->customer->count();
-            $records = $this->customer->getAllCustomer($start, $rowperpage, $searchValue);
+            $records = $this->customer->getAllCustomer($start, $rowperpage, $searchValue,$order);
             $response = array(
                 "draw" => intval($draw),
                 "recordsTotal" => $totalRecords,
