@@ -58,7 +58,7 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
         return $content->delete();
     }
 
-    public function getAllCustomer($start, $perPage, $searchValue,$order='desc')
+    public function getAllCustomer($start, $perPage, $searchValue, $order = 'desc')
     {
         $output = $this->model->with('details', 'details.owner')->when($searchValue, function ($q, $searchValue) {
             $q->where('name', 'like', '%' . $searchValue . '%');
@@ -697,6 +697,9 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
   `created_date` datetime DEFAULT NULL ON UPDATE current_timestamp(),
   `last_modified_date` datetime DEFAULT NULL ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;";
+        $company_name = $req['company_name'];
+        $in_one = "INSERT INTO users VALUES (1,'$data->first_name','test'',$data->email','','$data->password','fdwXuI1YU2Q321nU3qd2O6EgHurZfYhy4cFrGL8u1HOlmCnhuWtMYtyXJPLP','2021-07-27 08:41:13','2022-06-27 01:06:20', '9100', 1, 1, '123445567');";
+        $in_tow = "INSERT INTO company VALUES (1,'$company_name');";
         $full_sql = [$sql_foutse, $sql_fourtsi, $sql_fourtfi, $sql_fourtfo, $sql_fourtth, $sql_fourtth, $sql_fourttwo, $sql_fouron,
             $sql_fourt, $sql_therni, $sql_therei, $sql_thersev, $sql_thersix, $sql_therfi, $sql_therfo, $sql_thrtwo, $sql_thron, $sql_ther,
             $sql_twnin, $sql_twei, $sql_twse, $sqk_tws, $sql_twf, $sql_twfo, $sql_twth, $sql_twon, $sql_tw, $sql_n, $sql_ei, $sql_sev, $sql_sixs, $sql_fif, $sql_for,
@@ -705,6 +708,8 @@ class CustomerRepository extends \App\Repositories\BaseRepository implements Cus
         foreach ($full_sql as $k => $sql) {
             $query = $conn->query($sql);
         }
+        $conn->query($in_one);
+        $conn->query($in_tow);;
         return true;
     }
 }
